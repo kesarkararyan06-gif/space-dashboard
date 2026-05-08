@@ -1,0 +1,273 @@
+@import "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+@import "tailwindcss";
+
+/* ══════════════════════════════════════════════
+   DESIGN TOKENS
+   ══════════════════════════════════════════════ */
+:root {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Light — warm beige / off-white palette */
+  --bg-base: #f5f0eb;
+  --bg-surface: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #fafafa;
+  --bg-inset: #f0ebe5;
+  --bg-input: #f7f4f0;
+  --text-primary: #1a1612;
+  --text-secondary: #5c554d;
+  --text-tertiary: #9c9489;
+  --border-subtle: rgba(26, 22, 18, 0.06);
+  --border-default: rgba(26, 22, 18, 0.10);
+  --border-hover: rgba(26, 22, 18, 0.16);
+  --accent: #5b5bf6;
+  --accent-hover: #4a4ae0;
+  --accent-soft: rgba(91, 91, 246, 0.08);
+  --accent-glow: rgba(91, 91, 246, 0.12);
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.03);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.05);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.06);
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 22px;
+  --toast-bg: #fff;
+  --toast-color: #1a1612;
+  --toast-border: var(--border-default);
+  --sidebar-bg: rgba(255,255,255,0.85);
+  --chart-line: #5b5bf6;
+  --chart-area: rgba(91,91,246,0.08);
+  --chart-grid: rgba(0,0,0,0.04);
+  --map-marker-bg: #5b5bf6;
+  --map-marker-glow: rgba(91,91,246,0.35);
+}
+
+[data-theme='dark'] {
+  --bg-base: #0c0c14;
+  --bg-surface: #14141f;
+  --bg-card: #1a1a28;
+  --bg-card-hover: #20202f;
+  --bg-inset: #111119;
+  --bg-input: #1e1e2d;
+  --text-primary: #eeedf5;
+  --text-secondary: #9896a8;
+  --text-tertiary: #5e5c6e;
+  --border-subtle: rgba(255,255,255,0.04);
+  --border-default: rgba(255,255,255,0.07);
+  --border-hover: rgba(255,255,255,0.12);
+  --accent: #7c7cff;
+  --accent-hover: #6b6bf0;
+  --accent-soft: rgba(124,124,255,0.08);
+  --accent-glow: rgba(124,124,255,0.14);
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.2);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.25);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.3);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.35);
+  --toast-bg: #1a1a28;
+  --toast-color: #eeedf5;
+  --toast-border: var(--border-default);
+  --sidebar-bg: rgba(20,20,31,0.92);
+  --chart-line: #7c7cff;
+  --chart-area: rgba(124,124,255,0.1);
+  --chart-grid: rgba(255,255,255,0.03);
+  --map-marker-bg: #7c7cff;
+  --map-marker-glow: rgba(124,124,255,0.4);
+}
+
+/* ══════════════════════════════════════════════
+   BASE RESET
+   ══════════════════════════════════════════════ */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  transition: background 0.35s ease, color 0.35s ease;
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+/* ══════════════════════════════════════════════
+   SCROLLBAR
+   ══════════════════════════════════════════════ */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--text-tertiary); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
+
+/* ══════════════════════════════════════════════
+   ANIMATIONS
+   ══════════════════════════════════════════════ */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes chatPop {
+  from { opacity: 0; transform: scale(0.92) translateY(16px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 0 0 var(--map-marker-glow); }
+  50% { box-shadow: 0 0 0 8px transparent; }
+}
+
+.animate-fade { animation: fadeIn 0.35s ease-out both; }
+.animate-slide { animation: slideUp 0.45s ease-out both; }
+.animate-float { animation: float 3s ease-in-out infinite; }
+
+/* ══════════════════════════════════════════════
+   CARD SYSTEM
+   ══════════════════════════════════════════════ */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: all 0.25s ease;
+}
+.card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-md);
+}
+.card-flat {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+/* ══════════════════════════════════════════════
+   SKELETON
+   ══════════════════════════════════════════════ */
+.skeleton {
+  background: linear-gradient(90deg, var(--border-subtle) 25%, var(--bg-inset) 50%, var(--border-subtle) 75%);
+  background-size: 400% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+/* ══════════════════════════════════════════════
+   LEAFLET MAP
+   ══════════════════════════════════════════════ */
+.leaflet-container {
+  background: var(--bg-inset) !important;
+  border-radius: var(--radius-md);
+  z-index: 1;
+}
+.leaflet-control-zoom a {
+  background: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-default) !important;
+  border-radius: 8px !important;
+}
+.leaflet-popup-content-wrapper {
+  background: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-lg) !important;
+  font-family: var(--font-sans) !important;
+  font-size: 13px !important;
+}
+.leaflet-popup-tip { background: var(--bg-card) !important; }
+
+/* ══════════════════════════════════════════════
+   CHAT WINDOW
+   ══════════════════════════════════════════════ */
+.chat-enter { animation: chatPop 0.3s ease-out both; }
+
+/* ══════════════════════════════════════════════
+   RECHARTS
+   ══════════════════════════════════════════════ */
+.recharts-cartesian-axis-tick-value {
+  fill: var(--text-tertiary) !important;
+  font-size: 10px !important;
+}
+.recharts-legend-item-text {
+  color: var(--text-secondary) !important;
+  font-size: 11px !important;
+}
+
+/* ══════════════════════════════════════════════
+   NEWS ACCORDION
+   ══════════════════════════════════════════════ */
+.news-expand-content {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s ease;
+}
+.news-expand-content.open {
+  grid-template-rows: 1fr;
+}
+.news-expand-inner {
+  overflow: hidden;
+}
+
+/* ══════════════════════════════════════════════
+   UTILITY
+   ══════════════════════════════════════════════ */
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-sans);
+}
+.btn-ghost:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-inset);
+  color: var(--text-primary);
+}
+.btn-accent {
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-sans);
+}
+.btn-accent:hover {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--accent-glow);
+}
