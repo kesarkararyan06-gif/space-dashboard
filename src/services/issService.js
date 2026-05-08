@@ -1,31 +1,35 @@
 import axios from 'axios'
 
-const ISS_POSITION_URL = '/iss-api/iss-now.json'
-const ASTROS_URL = '/iss-api/astros.json'
+const ISS_POSITION_URL = 'https://api.wheretheiss.at/v1/satellites/25544'
+const ASTROS_URL = 'https://corquaid.github.io/international-space-station-APIs/JSON/people-in-space.json'
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/reverse'
 
 /**
  * Fetch current ISS position.
+ * Uses HTTPS-compatible API for production.
  */
 export async function fetchISSPosition() {
   const { data } = await axios.get(ISS_POSITION_URL, { timeout: 10000 })
-  if (data.message !== 'success') throw new Error('ISS API error')
   return {
-    latitude: parseFloat(data.iss_position.latitude),
-    longitude: parseFloat(data.iss_position.longitude),
+    latitude: parseFloat(data.latitude),
+    longitude: parseFloat(data.longitude),
+    velocity: data.velocity, // km/h
     timestamp: data.timestamp,
   }
 }
 
 /**
  * Fetch astronauts currently in space.
+ * Uses HTTPS-compatible API for production.
  */
 export async function fetchAstronauts() {
   const { data } = await axios.get(ASTROS_URL, { timeout: 10000 })
-  if (data.message !== 'success') throw new Error('Astros API error')
   return {
     count: data.number,
-    people: data.people,
+    people: data.people.map(p => ({
+      name: p.name,
+      craft: p.spacecraft || p.craft || 'ISS' // Map spacecraft to craft for UI compatibility
+    })),
   }
 }
 

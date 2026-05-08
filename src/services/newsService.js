@@ -3,13 +3,13 @@ import { storage } from '../utils/helpers'
 
 const NEWS_CACHE_KEY = 'space-dashboard-news-gnews'
 const CACHE_DURATION = 15 * 60 * 1000 // 15 minutes
-const BASE_URL = 'https://gnews.io/api/v4/search'
+const BASE_URL = 'https://gnews.io/api/v4/top-headlines'
 
 /**
- * Fetch news articles exclusively from GNews API.
+ * Fetch news articles exclusively from GNews API (Top Headlines).
  * Uses VITE_GNEWS_API_KEY from environment variables.
  */
-export async function fetchNews(query = 'space OR NASA OR ISS') {
+export async function fetchNews() {
   // Check cache first
   const cached = storage.get(NEWS_CACHE_KEY)
   if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
@@ -25,11 +25,11 @@ export async function fetchNews(query = 'space OR NASA OR ISS') {
   try {
     const { data } = await axios.get(BASE_URL, {
       params: {
-        q: query,
+        category: 'general',
+        q: 'space OR NASA OR ISS', // Keep relevant keywords in headlines if possible
         lang: 'en',
-        max: 15,
-        sortby: 'publishedAt',
-        token: apiKey,
+        max: 10,
+        apikey: apiKey,
       },
       timeout: 10000,
     })

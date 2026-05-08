@@ -1,76 +1,70 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { fetchISSPosition, fetchAstronauts, reverseGeocode } from '../services/issService'
 import { useDashboard } from '../context/DashboardContext'
-import { calculateSpeed } from '../utils/helpers'
 import toast from 'react-hot-toast'
 
 const MAX_HISTORY = 15
 const MAX_SPEED_HISTORY = 30
 const POLL_INTERVAL = 15000
-const GEOCODE_INTERVAL = 30000 // Geocode at most every 30s to avoid rate limits
+const GEOCODE_MIN_DIST = 0.5 // Only geocode if ISS moved at least 0.5 degrees
 
 export function useISS() {
   const { state, dispatch } = useDashboard()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  // ── Refs to avoid stale closures and prevent re-render loops ──
-  const prevPositionRef = useRef(null)
+  // ── Refs for polling safety and state tracking ──
+  const isFetching = useRef(false)             // Primary request lock
+  const lastPosition = useRef(null)            // For meaningful change check
+  const lastGeocodeTime = useRef(0)            // Time throttle
+  const astronautsFetched = useRef(false)      // Strictly fetch once
+
+  // Refs to maintain state for callbacks without dependency loops
   const historyRef = useRef([])
   const speedHistoryRef = useRef([])
-  const intervalRef = useRef(null)
-  const isFetchingRef = useRef(false)          // Prevent overlapping requests
-  const lastGeocodeRef = useRef(0)             // Throttle geocoding
-  const astronautsFetchedRef = useRef(false)   // Fetch astronauts only once
 
-  // Keep refs in sync with context state (one-way: context → ref)
   useEffect(() => { historyRef.current = state.issHistory }, [state.issHistory])
   useEffect(() => { speedHistoryRef.current = state.issSpeed }, [state.issSpeed])
 
   /**
-   * Fetch ISS position. Astronauts are fetched only once on mount.
-   * All mutable data is read from refs to avoid re-creating this callback.
+   * Core fetch function for ISS data.
+   * Prevents overlapping calls and implements strict polling.
    */
-  const fetchPosition = useCallback(async (isManual = false) => {
-    // Guard: skip if a request is already in-flight
-    if (isFetchingRef.current) return
-    isFetchingRef.current = true
+  const fetchISSData = useCallback(async (isManual = false) => {
+    // ── Request Protection: Prevent overlapping calls ──
+    if (isFetching.current) return
+    isFetching.current = true
 
     try {
       setError(null)
-      const position = await fetchISSPosition()
+      const data = await fetchISSPosition()
 
-      dispatch({ type: 'SET_ISS_DATA', payload: position })
+      // ── Dispatch current position ──
+      dispatch({ type: 'SET_ISS_DATA', payload: data })
 
-      // ── Update history (last 15 positions) ──
-      const newHistory = [...historyRef.current, position].slice(-MAX_HISTORY)
-      historyRef.current = newHistory
+      // ── Update history ──
+      const newHistory = [...historyRef.current, data].slice(-MAX_HISTORY)
       dispatch({ type: 'SET_ISS_HISTORY', payload: newHistory })
 
-      // ── Calculate speed using previous position ──
-      const prev = prevPositionRef.current
-      if (prev) {
-        const timeDiff = position.timestamp - prev.timestamp
-        const speed = calculateSpeed(prev, position, timeDiff)
+      // ── Update speed history ──
+      const newSpeedHistory = [
+        ...speedHistoryRef.current,
+        { time: data.timestamp, speed: data.velocity },
+      ].slice(-MAX_SPEED_HISTORY)
+      dispatch({ type: 'SET_ISS_SPEED', payload: newSpeedHistory })
 
-        // Clamp to reasonable ISS speed range (0–30 000 km/h)
-        const clampedSpeed = Math.min(Math.max(speed, 0), 30000)
+      // ── Reverse Geocoding: Only run if coordinates change meaningfully ──
+      const hasMovedSignificantly = !lastPosition.current ||
+        Math.abs(data.latitude - lastPosition.current.latitude) > GEOCODE_MIN_DIST ||
+        Math.abs(data.longitude - lastPosition.current.longitude) > GEOCODE_MIN_DIST
 
-        const newSpeedHistory = [
-          ...speedHistoryRef.current,
-          { time: position.timestamp, speed: clampedSpeed },
-        ].slice(-MAX_SPEED_HISTORY)
-        speedHistoryRef.current = newSpeedHistory
-        dispatch({ type: 'SET_ISS_SPEED', payload: newSpeedHistory })
-      }
-
-      prevPositionRef.current = position
-
-      // ── Reverse geocode (throttled) ──
       const now = Date.now()
-      if (now - lastGeocodeRef.current >= GEOCODE_INTERVAL) {
-        lastGeocodeRef.current = now
-        reverseGeocode(position.latitude, position.longitude).then((place) => {
+      const enoughTimePassed = now - lastGeocodeTime.current > 60000 // At most once per minute
+
+      if (hasMovedSignificantly && enoughTimePassed) {
+        lastGeocodeTime.current = now
+        lastPosition.current = data
+        reverseGeocode(data.latitude, data.longitude).then((place) => {
           dispatch({ type: 'SET_NEAREST_PLACE', payload: place })
         })
       }
@@ -82,50 +76,50 @@ export function useISS() {
       setLoading(false)
       if (isManual) toast.error('Failed to update ISS position')
     } finally {
-      isFetchingRef.current = false
+      // ── Cleanup: Ensure lock is always released ──
+      isFetching.current = false
     }
-  }, [dispatch]) // dispatch is stable — no re-creation
+  }, [dispatch])
 
   /**
-   * Fetch astronauts — called only once on mount.
+   * Fetch Astronauts: Runs strictly once on mount.
    */
-  const fetchAstronautData = useCallback(async () => {
-    if (astronautsFetchedRef.current) return
-    astronautsFetchedRef.current = true
+  const fetchInitialData = useCallback(async () => {
+    if (astronautsFetched.current) return
+    astronautsFetched.current = true
     try {
       const data = await fetchAstronauts()
       dispatch({ type: 'SET_ASTRONAUTS', payload: data.people })
     } catch (err) {
-      console.warn('Failed to fetch astronauts:', err.message)
-      astronautsFetchedRef.current = false // Allow retry
+      console.warn('Astronaut API failed:', err.message)
+      astronautsFetched.current = false // Allow retry on manual refresh
     }
   }, [dispatch])
 
-  // ── Mount: initial fetch + interval ──
+  /**
+   * Polling System: Initializes once on mount.
+   */
   useEffect(() => {
-    // Fetch immediately
-    fetchPosition()
-    fetchAstronautData()
+    // Initial fetch
+    fetchISSData()
+    fetchInitialData()
 
-    // Poll ISS position every 15 seconds
-    intervalRef.current = setInterval(() => {
-      fetchPosition()
+    // ── Strict 15s Interval ──
+    const interval = setInterval(() => {
+      fetchISSData()
     }, POLL_INTERVAL)
 
-    // Cleanup — prevents duplicate intervals from StrictMode double-mount
-    return () => {
-      clearInterval(intervalRef.current)
-      intervalRef.current = null
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-  // Empty deps: runs once on mount. fetchPosition/fetchAstronautData are stable.
+    // ── Cleanup: Prevent duplicate intervals ──
+    return () => clearInterval(interval)
+  }, [fetchISSData, fetchInitialData])
 
-  // ── Manual refresh (with debounce guard via isFetchingRef) ──
+  /**
+   * Manual refresh handler.
+   */
   const refresh = useCallback(() => {
-    fetchPosition(true)
-    // Also retry astronauts if the initial fetch failed
-    if (!astronautsFetchedRef.current) fetchAstronautData()
-  }, [fetchPosition, fetchAstronautData])
+    fetchISSData(true)
+    if (!astronautsFetched.current) fetchInitialData()
+  }, [fetchISSData, fetchInitialData])
 
   return {
     issData: state.issData,
